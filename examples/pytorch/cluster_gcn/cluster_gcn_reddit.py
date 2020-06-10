@@ -39,7 +39,7 @@ def main(args):
     data = load_data(args)
 
     time_stamp_preprocessing = time.time() - start
-    logging.info("Loading data: " + str(time_stamp_preprocessing))
+    logging.info("Loading data: %f" + str(time_stamp_preprocessing))
 
     train_nid = np.nonzero(data.train_mask)[0].astype(np.int64)
 
@@ -103,17 +103,17 @@ def main(args):
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
 
-    logging.info(torch.cuda.get_device_name(0))
+    logging.info("Device name %s", torch.cuda.get_device_name(0))
 
     g.ndata['features'] = features
     g.ndata['labels'] = labels
     g.ndata['train_mask'] = train_mask
-    logging.info('labels shape:', labels.shape)
+    logging.info("labels shape: %s", labels.shape)
 
     cluster_iterator = ClusterIter(
         args.dataset, g, args.psize, args.batch_size, train_nid, use_pp=args.use_pp)
 
-    logging.info("features shape, ", features.shape)
+    logging.info("features shape: %s", features.shape)
 
     model = GraphSAGE(in_feats,
                       args.n_hidden,
@@ -148,7 +148,7 @@ def main(args):
     # set train_nids to cuda tensor
     if cuda:
         train_nid = torch.from_numpy(train_nid).cuda()
-    logging.info("current memory after model before training",
+    logging.info("current memory after model before training %d",
           torch.cuda.memory_allocated(device=train_nid.device) / 1024 / 1024)
     start_time = time.time()
     best_f1 = -1
@@ -171,22 +171,22 @@ def main(args):
             # in PPI case, `log_every` is chosen to log one time per epoch. 
             # Choose your log freq dynamically when you want more info within one epoch
             if j % args.log_every == 0:
-                print(f"epoch:{epoch}/{args.n_epochs}, Iteration {j}/"
+                logging.info(f"epoch:{epoch}/{args.n_epochs}, Iteration {j}/"
                       f"{len(cluster_iterator)}:training loss", loss.item())
                 writer.add_scalar('train/loss', loss.item(),
                                   global_step=j + epoch * len(cluster_iterator))
-        print("current memory:",
+        logging.info("current memory: %d",
               torch.cuda.memory_allocated(device=pred.device) / 1024 / 1024)
 
         # evaluate
         if epoch % args.val_every == 0:
             val_f1_mic, val_f1_mac = evaluate(
                 model, g, labels, val_mask, multitask)
-            print(
-                "Val F1-mic{:.4f}, Val F1-mac{:.4f}". format(val_f1_mic, val_f1_mac))
+            logging.info(
+                "Val F1-mic{:.4f}, Val F1-mac{:.4f}".format(val_f1_mic, val_f1_mac))
             if val_f1_mic > best_f1:
                 best_f1 = val_f1_mic
-                print('new best val f1:', best_f1)
+                logging.info('new best val f1: %f', best_f1)
                 torch.save(model.state_dict(), os.path.join(
                     log_dir, 'best_model.pkl'))
             writer.add_scalar('val/f1-mic', val_f1_mic, global_step=epoch)
@@ -201,12 +201,12 @@ def main(args):
             log_dir, 'best_model.pkl')))
     test_f1_mic, test_f1_mac = evaluate(
         model, g, labels, test_mask, multitask)
-    print("Test F1-mic{:.4f}, Test F1-mac{:.4f}". format(test_f1_mic, test_f1_mac))
+    logging.info("Test F1-mic{:.4f}, Test F1-mac{:.4f}".format(test_f1_mic, test_f1_mac))
     writer.add_scalar('test/f1-mic', test_f1_mic)
     writer.add_scalar('test/f1-mac', test_f1_mac)
 
     time_stamp_training = time.time() - start
-    logging.info("Training: " + str(time_stamp_training))
+    logging.info("Training: %f" + time_stamp_training)
 
     monitoring_gpu.terminate()
 
