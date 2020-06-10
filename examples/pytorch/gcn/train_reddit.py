@@ -1,3 +1,7 @@
+import time
+import logging
+import subprocess
+
 import argparse, time
 import numpy as np
 import networkx as nx
@@ -22,8 +26,11 @@ def evaluate(model, features, labels, mask):
         return correct.item() * 1.0 / len(labels)
 
 def main(args):
+    start = time.time()
+
     # load and preprocess dataset
     data = load_data(args)
+
     features = torch.FloatTensor(data.features)
     labels = torch.LongTensor(data.labels)
     if hasattr(torch, 'BoolTensor'):
@@ -37,7 +44,7 @@ def main(args):
     in_feats = features.shape[1]
     n_classes = data.num_labels
     n_edges = data.graph.number_of_edges()
-    print("""----Data statistics------'
+    logging.info("""----Data statistics------'
       #Edges %d
       #Classes %d
       #Train samples %d
@@ -59,6 +66,9 @@ def main(args):
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
 
+    time_stamp_data = time.time() - start
+    logging.info("Copying data: %f" + time_stamp_data)
+
     # graph preprocess and calculate normalization factor
     g = data.graph
     # add self loop
@@ -75,6 +85,9 @@ def main(args):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
+    time_stamp_preprocessing = time.time() - start
+    logging.info("Loading data: %f" + str(time_stamp_preprocessing))
+
     # create GCN model
     model = GCN(g,
                 in_feats,
@@ -86,6 +99,10 @@ def main(args):
 
     if cuda:
         model.cuda()
+
+    time_stamp_model = time.time() - start
+    logging.info("Copying model: %f" + time_stamp_model)
+
     loss_fcn = torch.nn.CrossEntropyLoss()
 
     # use optimizer
@@ -111,16 +128,22 @@ def main(args):
             dur.append(time.time() - t0)
 
         acc = evaluate(model, features, labels, val_mask)
-        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
+        logging.info("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
               "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.item(),
                                              acc, n_edges / np.mean(dur) / 1000))
 
-    print()
     acc = evaluate(model, features, labels, test_mask)
-    print("Test accuracy {:.2%}".format(acc))
+    logging.info("Test accuracy {:.2%}".format(acc))
+
+    time_stamp_training = time.time() - start
+    logging.info("Training: " + str(time_stamp_training))
 
 
 if __name__ == '__main__':
+    name = "dgl_gcn_reddit"
+    monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
+    logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
+
     parser = argparse.ArgumentParser(description='GCN')
     parser.add_argument("--dropout", type=float, default=0.2,
             help="dropout probability")
@@ -148,6 +171,8 @@ if __name__ == '__main__':
         "The input dataset. Can be cora, citeseer, pubmed, syn(synthetic dataset) or reddit"
     )
     args = parser.parse_args()
-    print(args)
+    logging.info(str(args))
 
     main(args)
+
+    monitoring_gpu.terminate()
