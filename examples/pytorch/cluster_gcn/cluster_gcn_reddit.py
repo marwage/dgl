@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLGraph
-from dgl.data import register_data_args
 from torch.utils.tensorboard import SummaryWriter
 
 from modules import GraphSAGE
@@ -213,7 +212,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
-    register_data_args(parser)
     parser.add_argument("--dropout", type=float, default=0.5,
                         help="dropout probability")
     parser.add_argument("--gpu", type=int, default=-1,
@@ -250,8 +248,14 @@ if __name__ == '__main__':
                         help="Weight for L2 loss")
     parser.add_argument("--note", type=str, default='none',
                         help="note for log dir")
-    parser.add_argument("--dataset", type=str, default='reddit-self-loop',
-                        help="name of dataset")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="reddit-self-loop"
+        required=False,
+        help=
+        "The input dataset. Can be cora, citeseer, pubmed, syn(synthetic dataset) or reddit"
+    )
 
     args = parser.parse_args()
 
