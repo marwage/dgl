@@ -67,7 +67,7 @@ def main(args):
         test_mask = test_mask.cuda()
 
     time_stamp_data = time.time() - start
-    logging.info("Copying data: %f" + time_stamp_data)
+    logging.info("Copying data: %f", time_stamp_data)
 
     # graph preprocess and calculate normalization factor
     g = data.graph
@@ -86,7 +86,7 @@ def main(args):
     g.ndata['norm'] = norm.unsqueeze(1)
 
     time_stamp_preprocessing = time.time() - start
-    logging.info("Loading data: %f" + str(time_stamp_preprocessing))
+    logging.info("Loading data: %f", time_stamp_preprocessing)
 
     # create GCN model
     model = GCN(g,
@@ -101,7 +101,7 @@ def main(args):
         model.cuda()
 
     time_stamp_model = time.time() - start
-    logging.info("Copying model: %f" + time_stamp_model)
+    logging.info("Copying model: %f", time_stamp_model)
 
     loss_fcn = torch.nn.CrossEntropyLoss()
 
@@ -136,7 +136,7 @@ def main(args):
     logging.info("Test accuracy {:.2%}".format(acc))
 
     time_stamp_training = time.time() - start
-    logging.info("Training: " + str(time_stamp_training))
+    logging.info("Training: %f", time_stamp_training)
 
 
 if __name__ == '__main__':
