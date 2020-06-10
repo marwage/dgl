@@ -7,6 +7,8 @@ from torch.nn import init
 from .... import function as fn
 from ....base import DGLError
 
+from torch.utils.checkpoint import checkpoint
+
 # pylint: disable=W0235
 class GraphConv(nn.Module):
     r"""Apply graph convolution over an input signal.
@@ -144,7 +146,7 @@ class GraphConv(nn.Module):
             if self._in_feats > self._out_feats:
                 # mult W first to reduce the feature size for aggregation.
                 if weight is not None:
-                    feat = th.matmul(feat, weight)
+                    feat = checkpoint(th.matmul, feat, weight)
                 graph.srcdata['h'] = feat
                 graph.update_all(fn.copy_src(src='h', out='m'),
                                  fn.sum(msg='m', out='h'))
@@ -156,7 +158,7 @@ class GraphConv(nn.Module):
                                  fn.sum(msg='m', out='h'))
                 rst = graph.dstdata['h']
                 if weight is not None:
-                    rst = th.matmul(rst, weight)
+                    rst = checkpoint(th.matmul, rst, weight)
 
             if self._norm != 'none':
                 degs = graph.in_degrees().to(feat.device).float().clamp(min=1)
@@ -172,7 +174,7 @@ class GraphConv(nn.Module):
                 rst = rst + self.bias
 
             if self._activation is not None:
-                rst = self._activation(rst)
+                rst = checkpoint(self._activation, rst)
 
             return rst
 
