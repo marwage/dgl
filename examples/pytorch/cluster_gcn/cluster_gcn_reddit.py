@@ -251,7 +251,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--dataset",
         type=str,
-        default="reddit-self-loop"
+        default="reddit-self-loop",
         required=False,
         help=
         "The input dataset. Can be cora, citeseer, pubmed, syn(synthetic dataset) or reddit"
