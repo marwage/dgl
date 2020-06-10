@@ -146,7 +146,8 @@ class GraphConv(nn.Module):
             if self._in_feats > self._out_feats:
                 # mult W first to reduce the feature size for aggregation.
                 if weight is not None:
-                    feat = checkpoint(th.matmul, feat, weight)
+                    # feat = checkpoint(th.matmul, feat, weight)
+                    feat = th.matmul(feat, weight)
                 graph.srcdata['h'] = feat
                 graph.update_all(fn.copy_src(src='h', out='m'),
                                  fn.sum(msg='m', out='h'))
@@ -158,7 +159,8 @@ class GraphConv(nn.Module):
                                  fn.sum(msg='m', out='h'))
                 rst = graph.dstdata['h']
                 if weight is not None:
-                    rst = checkpoint(th.matmul, rst, weight)
+                    # rst = checkpoint(th.matmul, rst, weight)
+                    rst = th.matmul(rst, weight)
 
             if self._norm != 'none':
                 degs = graph.in_degrees().to(feat.device).float().clamp(min=1)
