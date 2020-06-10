@@ -4,8 +4,8 @@ import torch as th
 from torch import nn
 from torch.nn import init
 
-from .... import function as fn
-from ....base import DGLError
+from dgl import function as fn
+from dgl.base import DGLError
 
 from torch.utils.checkpoint import checkpoint
 
