@@ -1,5 +1,5 @@
 import os
-os.environ['METIS_DLL'] = "~/.local/lib/libmetis.so"
+os.environ["METIS_DLL"] = os.getenv("HOME") + "/.local/lib/libmetis.so"
 import argparse
 import time
 import random
