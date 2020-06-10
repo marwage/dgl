@@ -7,7 +7,7 @@ References:
 """
 import torch
 import torch.nn as nn
-from dgl.nn.pytorch import GraphConv
+from grahconv import GraphConv
 
 class GCN(nn.Module):
     def __init__(self,
