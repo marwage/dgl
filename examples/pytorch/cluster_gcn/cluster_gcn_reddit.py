@@ -1,5 +1,6 @@
-import argparse
 import os
+os.environ['METIS_DLL'] = "~/.local/lib/libmetis.so"
+import argparse
 import time
 import random
 import logging
@@ -211,8 +212,6 @@ def main(args):
     monitoring_gpu.terminate()
 
 if __name__ == '__main__':
-    os.environ['METIS_DLL'] = "~/.local/lib/libmetis.so"
-    
     parser = argparse.ArgumentParser(description='GCN')
     register_data_args(parser)
     parser.add_argument("--dropout", type=float, default=0.5,
