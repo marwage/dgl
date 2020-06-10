@@ -2,8 +2,6 @@ import argparse
 import os
 import time
 import random
-import logging
-import subprocess
 
 import numpy as np
 import networkx as nx
@@ -27,19 +25,11 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    name = "sage_reddit"
-    monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
-    logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
-    start = time.time()
-
     multitask_data = set(['ppi'])
     multitask = args.dataset in multitask_data
 
     # load and preprocess dataset
     data = load_data(args)
-
-    time_stamp_preprocessing = time.time() - start
-    logging.info("Loading data: " + str(time_stamp_preprocessing))
 
     train_nid = np.nonzero(data.train_mask)[0].astype(np.int64)
 
@@ -73,7 +63,7 @@ def main(args):
     n_val_samples = val_mask.int().sum().item()
     n_test_samples = test_mask.int().sum().item()
 
-    logging.info("""----Data statistics------'
+    print("""----Data statistics------'
     #Edges %d
     #Classes %d
     #Train samples %d
@@ -88,7 +78,7 @@ def main(args):
     if args.self_loop and not args.dataset.startswith('reddit'):
         g.remove_edges_from(nx.selfloop_edges(g))
         g.add_edges_from(zip(g.nodes(), g.nodes()))
-        logging.info("adding self-loop edges")
+        print("adding self-loop edges")
     g = DGLGraph(g, readonly=True)
 
     # set device for dataset tensors
@@ -103,17 +93,17 @@ def main(args):
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
 
-    logging.info(torch.cuda.get_device_name(0))
+    print(torch.cuda.get_device_name(0))
 
     g.ndata['features'] = features
     g.ndata['labels'] = labels
     g.ndata['train_mask'] = train_mask
-    logging.info('labels shape:', labels.shape)
+    print('labels shape:', labels.shape)
 
     cluster_iterator = ClusterIter(
         args.dataset, g, args.psize, args.batch_size, train_nid, use_pp=args.use_pp)
 
-    logging.info("features shape, ", features.shape)
+    print("features shape, ", features.shape)
 
     model = GraphSAGE(in_feats,
                       args.n_hidden,
@@ -134,10 +124,10 @@ def main(args):
 
     # Loss function
     if multitask:
-        logging.info('Using multi-label loss')
+        print('Using multi-label loss')
         loss_f = nn.BCEWithLogitsLoss()
     else:
-        logging.info('Using multi-class loss')
+        print('Using multi-class loss')
         loss_f = nn.CrossEntropyLoss()
 
     # use optimizer
@@ -148,7 +138,7 @@ def main(args):
     # set train_nids to cuda tensor
     if cuda:
         train_nid = torch.from_numpy(train_nid).cuda()
-    logging.info("current memory after model before training",
+    print("current memory after model before training",
           torch.cuda.memory_allocated(device=train_nid.device) / 1024 / 1024)
     start_time = time.time()
     best_f1 = -1
@@ -193,7 +183,7 @@ def main(args):
             writer.add_scalar('val/f1-mac', val_f1_mac, global_step=epoch)
 
     end_time = time.time()
-    logging.info(f'training using time {start_time-end_time}')
+    print(f'training using time {start_time-end_time}')
 
     # test
     if args.use_val:
@@ -204,11 +194,6 @@ def main(args):
     print("Test F1-mic{:.4f}, Test F1-mac{:.4f}". format(test_f1_mic, test_f1_mac))
     writer.add_scalar('test/f1-mic', test_f1_mic)
     writer.add_scalar('test/f1-mac', test_f1_mac)
-
-    time_stamp_training = time.time() - start
-    logging.info("Training: " + str(time_stamp_training))
-
-    monitoring_gpu.terminate()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
@@ -249,8 +234,6 @@ if __name__ == '__main__':
                         help="Weight for L2 loss")
     parser.add_argument("--note", type=str, default='none',
                         help="note for log dir")
-    parser.add_argument("--dataset", type=str, default='reddit-self-loop',
-                        help="name of dataset")
 
     args = parser.parse_args()
 
