@@ -169,7 +169,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    name = "gcn_reddit"
+    name = "gcn_products"
     monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
     logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
 
