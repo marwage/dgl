@@ -42,7 +42,7 @@ class GraphSAGE(nn.Module):
             h = layer(self.g, h)
         return h
 
-name = "playground"
+name = "sage_products"
 monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
 logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
 def log(start, when):
