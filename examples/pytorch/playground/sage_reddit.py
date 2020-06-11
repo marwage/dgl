@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.nn.pytorch import SAGEConv
-from dgl.data import load_data
+from dgl.data.reddit import RedditDataset
 
 import subprocess
 
@@ -42,7 +42,7 @@ class GraphSAGE(nn.Module):
 name = "playground"
 monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
 
-data = load_data("reddit")
+data = RedditDataset()
 
 graph = data.graph
 num_classes = data.num_labels
