@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from ogb.nodeproppred import DglNodePropPredDataset
 from dgl.nn.pytorch import SAGEConv
+from dgl.data import load_data
 
 import subprocess
 
@@ -41,19 +42,14 @@ class GraphSAGE(nn.Module):
 name = "playground"
 monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
 
-dataset = DglNodePropPredDataset(name='ogbn-products') # list with one graph as element
+data = load_data("reddit")
 
-splitted_idx = dataset.get_idx_split() # dict
-train_idx, val_idx, test_idx = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test'] # torch.Tensor
-graph = dataset.graph[0] # dgl.graph.DGLGraph
-num_classes = dataset.num_classes # int
+graph = data.graph
+num_classes = data.num_labels
 features = torch.FloatTensor(data.features)
 labels = torch.LongTensor(data.labels)
-
-feature_dim = features.size()[1]
-
-# graph.ndata dgl.view.NodeDataView
-# graph.ndata.keys() collections.abc.KeysView
+train_mask = torch.BoolTensor(data.train_mask)
+feature_dim = features.shape[1]
 
 num_hidden_channels = 128
 num_hidden_layers = 1
@@ -81,7 +77,7 @@ try:
     for _ in range(num_epochs):
         embeddings = model(features)
         print("Memory reserved after forward: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
-        loss = loss_fn(embeddings[train_idx], labels[train_idx])
+        loss = loss_fn(embeddings[train_mask], labels[train_mask])
         print("Memory reserved after loss: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
         optimizer.zero_grad()
         print("Memory reserved after zero_grad(): {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
