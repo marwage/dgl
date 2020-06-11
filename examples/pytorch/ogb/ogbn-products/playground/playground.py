@@ -50,13 +50,14 @@ def log(start, when):
     logging.debug("{:.1f}s:{}:active {:.2f}MB, allocated {:.2f}MB, reserved {:.2f}MB".format(time.time() - start, when, torch.cuda.memory_stats()["active_bytes.all.allocated"] / mb, torch.cuda.memory_allocated() / mb, torch.cuda.memory_reserved() / mb))
 start = time.time()
 
-data = DglNodePropPredDataset(name='ogbn-products') # list with one graph as element
-splitted_idx = data.get_idx_split() # dict
+dataset = DglNodePropPredDataset(name='ogbn-products') # list with one graph as element
+splitted_idx = dataset.get_idx_split() # dict
 train_idx, val_idx, test_idx = splitted_idx['train'], splitted_idx['valid'], splitted_idx['test'] # torch.Tensor
 graph = dataset.graph[0] # dgl.graph.DGLGraph
+labels = dataset.labels # torch.Tensor
+labels = labels[:, 0] # unpack labels
 num_classes = dataset.num_classes # int
-features = torch.FloatTensor(data.features)
-labels = torch.LongTensor(data.labels)
+features = graph.ndata["feat"] # torch.Tensor
 feature_dim = features.size()[1]
 
 logging.info("Dataset:Reddit")
