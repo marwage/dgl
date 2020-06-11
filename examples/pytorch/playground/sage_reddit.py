@@ -9,6 +9,9 @@ from dgl.nn.pytorch import SAGEConv
 from dgl.data.reddit import RedditDataset
 
 import subprocess
+import time
+import logging
+import sys
 
 
 class GraphSAGE(nn.Module):
@@ -41,51 +44,72 @@ class GraphSAGE(nn.Module):
 
 name = "playground"
 monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
+logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
+def log(start, when):
+    mb = 1e6
+    logging.debug("{:.1f}s:{}:active {:.2f}MB, allocated {:.2f}MB, reserved {:.2f}MB".format(time.time() - start, when, torch.cuda.memory_stats()["active_bytes.all.allocated"] / mb, torch.cuda.memory_allocated() / mb, torch.cuda.memory_reserved() / mb))
+start = time.time()
 
 data = RedditDataset()
-
 graph = data.graph
 num_classes = data.num_labels
 features = torch.FloatTensor(data.features)
 labels = torch.LongTensor(data.labels)
 train_mask = torch.BoolTensor(data.train_mask)
+val_mask = torch.BoolTensor(data.val_mask)
+test_mask = torch.BoolTensor(data.test_mask)
 feature_dim = features.shape[1]
 
-num_hidden_channels = 128
-num_hidden_layers = 1
+logging.info("Dataset:Reddit")
+logging.info("Number of nodes:{}".format(graph.number_of_nodes()))
+logging.info("Number of edges:{}".format(graph.number_of_edges()))
+logging.info("Dimensionality of features:{}".format(feature_dim))
+logging.info("Number of classes:{}".format(num_classes))
+logging.info("Number of training samples:{}".format(len(np.nonzero(train_mask)[0])))
+logging.info("Number of validation samples:{}".format(len(np.nonzero(val_mask)[0])))
+logging.info("Number of test samples:{}".format(len(np.nonzero(test_mask)[0])))
+
+num_hidden_channels = 256
+num_hidden_layers = 2
 activation = F.relu
 p_dropout = 0.2
 aggregator_type = "mean"
 model = GraphSAGE(graph, feature_dim, num_hidden_channels, num_classes, num_hidden_layers, activation, p_dropout, aggregator_type)
-learning_reate = 3e-3
-optimizer = optim.Adam(model.parameters(), lr=learning_reate)
+learning_rate = 3e-3
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 loss_fn = nn.CrossEntropyLoss()
 
-mb = 1e6
+logging.info("Number of hidden channels:{}".format(num_hidden_channels))
+logging.info("Number of hidden layers:{}".format(num_hidden_layers))
+logging.info("Activation function:{}".format("F.relu"))
+logging.info("Dropout:{}".format(p_dropout))
+logging.info("Aggregation:{}".format(aggregator_type))
+logging.info("Model:{}".format("GraphSAGE"))
+logging.info("Optimizer:{}".format("optim.Adam"))
+logging.info("Loss function:{}".format("nn.CrossEntropyLoss"))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Memory reserved beginning: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
+log(start, "after declaration")
 model.to(device)
-print("Memory reserved after model.to(): {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
+log(start, "after model.to()")
 features = features.to(device)
 labels = labels.to(device)
-print("Memory reserved after data.to(): {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
+log(start, "after data.to()")
 
 # training
-num_epochs = 3
 try:
-    for _ in range(num_epochs):
-        embeddings = model(features)
-        print("Memory reserved after forward: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
-        loss = loss_fn(embeddings[train_mask], labels[train_mask])
-        print("Memory reserved after loss: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
-        optimizer.zero_grad()
-        print("Memory reserved after zero_grad(): {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
-        loss.backward()
-        print("Memory reserved after backward: {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
-        optimizer.step()
-        print("Memory reserved after optimizer.step(): {:.2f} MB".format(torch.cuda.memory_reserved(device=device) / mb))
+    embeddings = model(features)
+    log(start, "after forward")
+    loss = loss_fn(embeddings[train_mask], labels[train_mask])
+    log(start, "after loss")
+    optimizer.zero_grad()
+    log(start, "after optimizer.zero_grad()")
+    loss.backward()
+    log(start, "after backward")
+    optimizer.step()
+    log(start, "after optimizer.zero_grad()")
 except:
-    print("Training failed")
-finally:
-    monitoring_gpu.terminate()
+    logging.error(sys.exc_info()[0])
+
+time.sleep(5)
+monitoring_gpu.terminate()
