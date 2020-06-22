@@ -12,8 +12,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLGraph
-from dgl.data import register_data_args, load_data
+from dgl.data import load_data
 from dgl.nn.pytorch.conv import SAGEConv
+
+import logging
+from mw_logging import log_gpu_memory, log_tensor
+import subprocess
 
 
 class GraphSAGE(nn.Module):
@@ -33,7 +37,7 @@ class GraphSAGE(nn.Module):
         # input layer
         self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type, feat_drop=dropout, activation=activation))
         # hidden layers
-        for i in range(n_layers - 1):
+        for _ in range(n_layers - 1):
             self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type, feat_drop=dropout, activation=activation))
         # output layer
         self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, feat_drop=dropout, activation=None)) # activation None
@@ -55,7 +59,11 @@ def evaluate(model, features, labels, mask):
         correct = torch.sum(indices == labels)
         return correct.item() * 1.0 / len(labels)
 
+
 def main(args):
+    start = time.time()
+    log_gpu_memory("beginning", start)
+
     # load and preprocess dataset
     data = load_data(args)
     features = torch.FloatTensor(data.features)
@@ -71,7 +79,11 @@ def main(args):
     in_feats = features.shape[1]
     n_classes = data.num_labels
     n_edges = data.graph.number_of_edges()
-    print("""----Data statistics------'
+
+    logging.debug("Number of nodes: {}".format(data.graph.number_of_nodes()))
+    logging.debug("Number of features: {}".format(in_feats))
+
+    logging.info("""----Data statistics------'
       #Edges %d
       #Classes %d
       #Train samples %d
@@ -92,13 +104,17 @@ def main(args):
         train_mask = train_mask.cuda()
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
-        print("use cuda:", args.gpu)
+        logging.info("use cuda:", args.gpu)
+
+    log_gpu_memory("After copying data", start)
 
     # graph preprocess and calculate normalization factor
     g = data.graph
     g.remove_edges_from(nx.selfloop_edges(g))
     g = DGLGraph(g)
     n_edges = g.number_of_edges()
+
+    logging.debug("Number of edges: {}".format(n_edges))
 
     # create GraphSAGE model
     model = GraphSAGE(g,
@@ -113,6 +129,13 @@ def main(args):
 
     if cuda:
         model.cuda()
+
+    log_gpu_memory("After copying model", start)
+    logging.debug("-------- model ---------")
+    logging.debug("Type of model: {}".format(type(model)))
+    for i, param in enumerate(model.parameters()):
+        log_tensor(param, "param {}".format(i))
+
     loss_fcn = torch.nn.CrossEntropyLoss()
 
     # use optimizer
@@ -136,18 +159,20 @@ def main(args):
             dur.append(time.time() - t0)
 
         acc = evaluate(model, features, labels, val_mask)
-        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
+        logging.info("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
               "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
                                             acc, n_edges / np.mean(dur) / 1000))
 
-    print()
     acc = evaluate(model, features, labels, test_mask)
-    print("Test Accuracy {:.4f}".format(acc))
+    logging.info("Test Accuracy {:.4f}".format(acc))
 
 
 if __name__ == '__main__':
+    name = "gcn_reddit"
+    monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
+    logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
+
     parser = argparse.ArgumentParser(description='GraphSAGE')
-    register_data_args(parser)
     parser.add_argument("--dropout", type=float, default=0.5,
                         help="dropout probability")
     parser.add_argument("--gpu", type=int, default=-1,
@@ -156,15 +181,26 @@ if __name__ == '__main__':
                         help="learning rate")
     parser.add_argument("--n-epochs", type=int, default=200,
                         help="number of training epochs")
-    parser.add_argument("--n-hidden", type=int, default=16,
+    parser.add_argument("--n-hidden", type=int, default=1024,
                         help="number of hidden gcn units")
-    parser.add_argument("--n-layers", type=int, default=1,
+    parser.add_argument("--n-layers", type=int, default=2,
                         help="number of hidden gcn layers")
     parser.add_argument("--weight-decay", type=float, default=5e-4,
                         help="Weight for L2 loss")
     parser.add_argument("--aggregator-type", type=str, default="gcn",
                         help="Aggregator type: mean/gcn/pool/lstm")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="reddit-self-loop",
+        required=False,
+        help=
+        "The input dataset. Can be cora, citeseer, pubmed, syn(synthetic dataset) or reddit"
+    )
     args = parser.parse_args()
-    print(args)
+    
+    logging.info(str(args))
 
     main(args)
+
+    monitoring_gpu.terminate()
