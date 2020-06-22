@@ -157,3 +157,7 @@ cscope.*
 
 # asv
 .asv
+
+# nvidia-smi
+*.smi
+

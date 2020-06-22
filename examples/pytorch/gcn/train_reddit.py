@@ -45,6 +45,9 @@ def main(args):
     n_classes = data.num_labels
     n_edges = data.graph.number_of_edges()
 
+    logging.debug("Number of nodes: {}".format(data.graph.number_of_nodes()))
+    logging.debug("Number of features: {}".format(in_feats))
+
     logging.info("""----Data statistics------'
       #Edges %d
       #Classes %d
@@ -85,6 +88,11 @@ def main(args):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
+    log_gpu_memory("After normalisation", start)
+
+    logging.debug("Number of hidden layers: {}".format(args.n_layers))
+    logging.debug("Number of hidden channels: {}".format(args.n_hidden))
+
     # create GCN model
     model = GCN(g,
                 in_feats,
@@ -98,6 +106,10 @@ def main(args):
         model.cuda()
 
     log_gpu_memory("After copying model", start)
+    logging.debug("-------- model ---------")
+    logging.debug("Type of model: {}".format(type(model)))
+    for i, param in enumerate(model.parameters()):
+        log_tensor(param, "param {}".format(i))
 
     loss_fcn = torch.nn.CrossEntropyLoss()
 
@@ -153,9 +165,9 @@ if __name__ == '__main__':
             help="learning rate")
     parser.add_argument("--n-epochs", type=int, default=30,
             help="number of training epochs")
-    parser.add_argument("--n-hidden", type=int, default=512,
+    parser.add_argument("--n-hidden", type=int, default=1024,
             help="number of hidden gcn units")
-    parser.add_argument("--n-layers", type=int, default=1,
+    parser.add_argument("--n-layers", type=int, default=2,
             help="number of hidden gcn layers")
     parser.add_argument("--weight-decay", type=float, default=0.0,
             help="Weight for L2 loss")
