@@ -1,6 +1,7 @@
 import time
 import logging
 import subprocess
+from mw_logging import log_gpu_memory, log_tensor
 
 import argparse, time
 import numpy as np
@@ -10,10 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLGraph
 from dgl.data import register_data_args, load_data
-
 from gcn import GCN
-#from gcn_mp import GCN
-#from gcn_spmv import GCN
 
 def evaluate(model, features, labels, mask):
     model.eval()
@@ -27,6 +25,8 @@ def evaluate(model, features, labels, mask):
 
 def main(args):
     start = time.time()
+
+    log_gpu_memory("beginning", start)
 
     # load and preprocess dataset
     data = load_data(args)
@@ -44,6 +44,7 @@ def main(args):
     in_feats = features.shape[1]
     n_classes = data.num_labels
     n_edges = data.graph.number_of_edges()
+
     logging.info("""----Data statistics------'
       #Edges %d
       #Classes %d
@@ -66,8 +67,7 @@ def main(args):
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
 
-    time_stamp_data = time.time() - start
-    logging.info("Copying data: %f", time_stamp_data)
+    log_gpu_memory("After copying data", start)
 
     # graph preprocess and calculate normalization factor
     g = data.graph
@@ -85,9 +85,6 @@ def main(args):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
-    time_stamp_preprocessing = time.time() - start
-    logging.info("Loading data: %f", time_stamp_preprocessing)
-
     # create GCN model
     model = GCN(g,
                 in_feats,
@@ -100,8 +97,7 @@ def main(args):
     if cuda:
         model.cuda()
 
-    time_stamp_model = time.time() - start
-    logging.info("Copying model: %f", time_stamp_model)
+    log_gpu_memory("After copying model", start)
 
     loss_fcn = torch.nn.CrossEntropyLoss()
 
@@ -116,13 +112,17 @@ def main(args):
         model.train()
         if epoch >= 3:
             t0 = time.time()
-        # forward
         logits = model(features)
+        log_gpu_memory("After forward", start)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
+        log_gpu_memory("After loss", start)
 
         optimizer.zero_grad()
+        log_gpu_memory("After zero_grad", start)
         loss.backward()
+        log_gpu_memory("After backward", start)
         optimizer.step()
+        log_gpu_memory("After step", start)
 
         if epoch >= 3:
             dur.append(time.time() - t0)
