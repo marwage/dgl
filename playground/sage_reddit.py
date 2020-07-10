@@ -13,11 +13,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dgl import DGLGraph
 from dgl.data import load_data
-from dgl.nn.pytorch.conv import SAGEConv
+# from dgl.nn.pytorch.conv import SAGEConv
+from sageconv import SAGEConv
 
 import logging
-from mw_logging import log_gpu_memory, log_tensor
+import mw_logging
 import subprocess
+import sys
 
 
 class GraphSAGE(nn.Module):
@@ -43,9 +45,17 @@ class GraphSAGE(nn.Module):
         self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, feat_drop=dropout, activation=None)) # activation None
 
     def forward(self, features):
+        logging.debug("---------- Model forward ----------")
+
         h = features
+
         for layer in self.layers:
+            logging.debug("---------- layer ----------")
+
             h = layer(self.g, h)
+
+            mw_logging.log_tensor(h, "h_layer")
+
         return h
 
 
@@ -53,6 +63,7 @@ def evaluate(model, features, labels, mask):
     model.eval()
     with torch.no_grad():
         logits = model(features)
+        mw_logging.log_gpu_memory("After eval forward")
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -62,10 +73,12 @@ def evaluate(model, features, labels, mask):
 
 def main(args):
     start = time.time()
-    log_gpu_memory("beginning", start)
+    mw_logging.log_gpu_memory("beginning", start)
 
     # load and preprocess dataset
     data = load_data(args)
+    logging.debug("Type of data: {}".format(type(data)))
+
     features = torch.FloatTensor(data.features)
     labels = torch.LongTensor(data.labels)
     if hasattr(torch, 'BoolTensor'):
@@ -104,18 +117,27 @@ def main(args):
         train_mask = train_mask.cuda()
         val_mask = val_mask.cuda()
         test_mask = test_mask.cuda()
-        logging.info("use cuda:", args.gpu)
+        logging.info("use cuda: {}".format(args.gpu))
 
-    log_gpu_memory("After copying data", start)
+    mw_logging.log_peak_increase("After copying data")
+    mw_logging.log_tensor(features, "features")
+    mw_logging.log_tensor(labels, "labels")
+    mw_logging.log_tensor(train_mask, "train_mask")
+    mw_logging.log_tensor(val_mask, "val_mask")
+    mw_logging.log_tensor(test_mask, "test_mask")
 
     # graph preprocess and calculate normalization factor
     g = data.graph
-    g.remove_edges_from(nx.selfloop_edges(g))
+    # g.remove_edges_from(nx.selfloop_edges(g)) # 'DGLGraph' object has no attribute 'remove_edges_from'
     g = DGLGraph(g)
     n_edges = g.number_of_edges()
 
     logging.debug("Number of edges: {}".format(n_edges))
 
+    logging.debug("---------- graph ----------")
+    logging.debug("Type of graph: {}".format(type(g)))
+    logging.debug("Size of graph: {} B".format(sys.getsizeof(g)))
+    
     # create GraphSAGE model
     model = GraphSAGE(g,
                       in_feats,
@@ -130,11 +152,11 @@ def main(args):
     if cuda:
         model.cuda()
 
-    log_gpu_memory("After copying model", start)
+    mw_logging.log_peak_increase("After copying model")
     logging.debug("-------- model ---------")
     logging.debug("Type of model: {}".format(type(model)))
     for i, param in enumerate(model.parameters()):
-        log_tensor(param, "param {}".format(i))
+        mw_logging.log_tensor(param, "param {}".format(i))
 
     loss_fcn = torch.nn.CrossEntropyLoss()
 
@@ -147,13 +169,20 @@ def main(args):
         model.train()
         if epoch >= 3:
             t0 = time.time()
-        # forward
         logits = model(features)
+        mw_logging.log_gpu_memory("After forward", start)
+        mw_logging.log_peak_increase("After forward")
+        mw_logging.log_tensor(logits, "logits")
         loss = loss_fcn(logits[train_mask], labels[train_mask])
+        mw_logging.log_peak_increase("After loss")
+        mw_logging.log_tensor(loss, "loss")
 
         optimizer.zero_grad()
+        mw_logging.log_peak_increase("After zero_grad")
         loss.backward()
+        mw_logging.log_peak_increase("After backward")
         optimizer.step()
+        mw_logging.log_peak_increase("After step")
 
         if epoch >= 3:
             dur.append(time.time() - t0)
@@ -166,33 +195,35 @@ def main(args):
     acc = evaluate(model, features, labels, test_mask)
     logging.info("Test Accuracy {:.4f}".format(acc))
 
+    mw_logging.log_gpu_memory("End of training", start)
+
 
 if __name__ == '__main__':
-    name = "gcn_reddit"
+    name = "sage_reddit"
     monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
     logging.basicConfig(filename=f"{name}.log",level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(description='GraphSAGE')
-    parser.add_argument("--dropout", type=float, default=0.5,
+    parser.add_argument("--dropout", type=float, default=0.2,
                         help="dropout probability")
-    parser.add_argument("--gpu", type=int, default=-1,
+    parser.add_argument("--gpu", type=int, default=0,
                         help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
                         help="learning rate")
-    parser.add_argument("--n-epochs", type=int, default=200,
+    parser.add_argument("--n-epochs", type=int, default=3,
                         help="number of training epochs")
-    parser.add_argument("--n-hidden", type=int, default=1024,
+    parser.add_argument("--n-hidden", type=int, default=512,
                         help="number of hidden gcn units")
     parser.add_argument("--n-layers", type=int, default=2,
                         help="number of hidden gcn layers")
     parser.add_argument("--weight-decay", type=float, default=5e-4,
                         help="Weight for L2 loss")
-    parser.add_argument("--aggregator-type", type=str, default="gcn",
+    parser.add_argument("--aggregator-type", type=str, default="mean",
                         help="Aggregator type: mean/gcn/pool/lstm")
     parser.add_argument(
         "--dataset",
         type=str,
-        default="reddit-self-loop",
+        default="reddit",
         required=False,
         help=
         "The input dataset. Can be cora, citeseer, pubmed, syn(synthetic dataset) or reddit"
