@@ -104,6 +104,11 @@ class HeteroGraphConv(nn.Module):
     def __init__(self, mods, aggregate='sum'):
         super(HeteroGraphConv, self).__init__()
         self.mods = nn.ModuleDict(mods)
+        # Do not break if graph has 0-in-degree nodes.
+        # Because there is no general rule to add self-loop for heterograph.
+        for _, v in self.mods.items():
+            if hasattr(v, '_allow_zero_in_degree'):
+                v._allow_zero_in_degree = True
         if isinstance(aggregate, str):
             self.agg_fn = get_aggregate_fn(aggregate)
         else:
@@ -135,8 +140,13 @@ class HeteroGraphConv(nn.Module):
         if mod_kwargs is None:
             mod_kwargs = {}
         outputs = {nty : [] for nty in g.dsttypes}
-        if isinstance(inputs, tuple):
-            src_inputs, dst_inputs = inputs
+        if isinstance(inputs, tuple) or g.is_block:
+            if isinstance(inputs, tuple):
+                src_inputs, dst_inputs = inputs
+            else:
+                src_inputs = inputs
+                dst_inputs = {k: v[:g.number_of_dst_nodes(k)] for k, v in inputs.items()}
+
             for stype, etype, dtype in g.canonical_etypes:
                 rel_graph = g[stype, etype, dtype]
                 if rel_graph.number_of_edges() == 0:

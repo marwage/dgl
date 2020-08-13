@@ -5,8 +5,6 @@ dgl.sampling
 
 .. automodule:: dgl.sampling
 
-Sampling algorithms on graphs.
-
 Random walk sampling functions
 ------------------------------
 
@@ -24,7 +22,6 @@ Neighbor sampling functions
 
     sample_neighbors
     select_topk
-
 
 Builtin sampler classes for more complicated sampling algorithms
 ----------------------------------------------------------------

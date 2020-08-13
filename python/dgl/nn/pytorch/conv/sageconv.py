@@ -1,5 +1,6 @@
 """Torch Module for GraphSAGE layer"""
 # pylint: disable= no-member, arguments-differ, invalid-name
+import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -8,24 +9,30 @@ from ....utils import expand_as_pair, check_eq_shape
 
 
 class SAGEConv(nn.Module):
-    r"""GraphSAGE layer from paper `Inductive Representation Learning on
+    r"""
+
+    Description
+    -----------
+    GraphSAGE layer from paper `Inductive Representation Learning on
     Large Graphs <https://arxiv.org/pdf/1706.02216.pdf>`__.
 
     .. math::
-        h_{\mathcal{N}(i)}^{(l+1)} & = \mathrm{aggregate}
+        h_{\mathcal{N}(i)}^{(l+1)} &= \mathrm{aggregate}
         \left(\{h_{j}^{l}, \forall j \in \mathcal{N}(i) \}\right)
 
-        h_{i}^{(l+1)} & = \sigma \left(W \cdot \mathrm{concat}
-        (h_{i}^{l}, h_{\mathcal{N}(i)}^{l+1} + b) \right)
+        h_{i}^{(l+1)} &= \sigma \left(W \cdot \mathrm{concat}
+        (h_{i}^{l}, h_{\mathcal{N}(i)}^{l+1}) \right)
 
-        h_{i}^{(l+1)} & = \mathrm{norm}(h_{i}^{l})
+        h_{i}^{(l+1)} &= \mathrm{norm}(h_{i}^{l})
 
     Parameters
     ----------
     in_feats : int, or pair of ints
-        Input feature size.
+        Input feature size; i.e, the number of dimensions of :math:`h_i^{(l)}`.
 
-        If the layer is to be applied on a unidirectional bipartite graph, ``in_feats``
+        GATConv can be applied on homogeneous graph and unidirectional
+        `bipartite graph <https://docs.dgl.ai/generated/dgl.bipartite.html?highlight=bipartite>`__.
+        If the layer applies on a unidirectional bipartite graph, ``in_feats``
         specifies the input feature size on both the source and destination nodes.  If
         a scalar is given, the source and destination node feature size would take the
         same value.
@@ -33,7 +40,7 @@ class SAGEConv(nn.Module):
         If aggregator type is ``gcn``, the feature size of source and destination nodes
         are required to be the same.
     out_feats : int
-        Output feature size.
+        Output feature size; i.e, the number of dimensions of :math:`h_i^{(l+1)}`.
     feat_drop : float
         Dropout rate on features, default: ``0``.
     aggregator_type : str
@@ -45,6 +52,41 @@ class SAGEConv(nn.Module):
     activation : callable activation function/layer or None, optional
         If not None, applies an activation function to the updated node features.
         Default: ``None``.
+
+    Examples
+    --------
+    >>> import dgl
+    >>> import numpy as np
+    >>> import torch as th
+    >>> from dgl.nn import SAGEConv
+
+    >>> # Case 1: Homogeneous graph
+    >>> g = dgl.graph(([0,1,2,3,2,5], [1,2,3,4,0,3]))
+    >>> g = dgl.add_self_loop(g)
+    >>> feat = th.ones(6, 10)
+    >>> conv = SAGEConv(10, 2, 'pool')
+    >>> res = conv(g, feat)
+    >>> res
+    tensor([[-1.0888, -2.1099],
+            [-1.0888, -2.1099],
+            [-1.0888, -2.1099],
+            [-1.0888, -2.1099],
+            [-1.0888, -2.1099],
+            [-1.0888, -2.1099]], grad_fn=<AddBackward0>)
+
+    >>> # Case 2: Unidirectional bipartite graph
+    >>> u = [0, 1, 0, 0, 1]
+    >>> v = [0, 1, 2, 3, 2]
+    >>> g = dgl.bipartite((u, v))
+    >>> u_fea = th.rand(2, 5)
+    >>> v_fea = th.rand(4, 10)
+    >>> conv = SAGEConv((5, 10), 2, 'mean')
+    >>> res = conv(g, (u_fea, v_fea))
+    >>> res
+    tensor([[ 0.3163,  3.1166],
+            [ 0.3866,  2.5398],
+            [ 0.5873,  1.6597],
+            [-0.2502,  2.8068]], grad_fn=<AddBackward0>)
     """
     def __init__(self,
                  in_feats,
@@ -73,7 +115,17 @@ class SAGEConv(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        """Reinitialize learnable parameters."""
+        r"""
+
+        Description
+        -----------
+        Reinitialize learnable parameters.
+
+        Notes
+        -----
+        The linear weights :math:`W^{(l)}` are initialized using Glorot uniform initialization.
+        The LSTM module is using xavier initialization method for its weights.
+        """
         gain = nn.init.calculate_gain('relu')
         if self._aggre_type == 'pool':
             nn.init.xavier_uniform_(self.fc_pool.weight, gain=gain)
@@ -96,15 +148,20 @@ class SAGEConv(nn.Module):
         return {'neigh': rst.squeeze(0)}
 
     def forward(self, graph, feat):
-        r"""Compute GraphSAGE layer.
+        r"""
+
+        Description
+        -----------
+        Compute GraphSAGE layer.
 
         Parameters
         ----------
         graph : DGLGraph
             The graph.
         feat : torch.Tensor or pair of torch.Tensor
-            If a torch.Tensor is given, the input feature of shape :math:`(N, D_{in})` where
-            :math:`D_{in}` is size of input feature, :math:`N` is the number of nodes.
+            If a torch.Tensor is given, it represents the input feature of shape
+            :math:`(N, D_{in})`
+            where :math:`D_{in}` is size of input feature, :math:`N` is the number of nodes.
             If a pair of torch.Tensor is given, the pair must contain two tensors of shape
             :math:`(N_{in}, D_{in_{src}})` and :math:`(N_{out}, D_{in_{dst}})`.
 
@@ -120,8 +177,15 @@ class SAGEConv(nn.Module):
                 feat_dst = self.feat_drop(feat[1])
             else:
                 feat_src = feat_dst = self.feat_drop(feat)
+                if graph.is_block:
+                    feat_dst = feat_src[:graph.number_of_dst_nodes()]
 
             h_self = feat_dst
+
+            # Handle the case of graphs without edges
+            if graph.number_of_edges() == 0:
+                graph.dstdata['neigh'] = torch.zeros(
+                    feat_dst.shape[0], self._in_src_feats).to(feat_dst)
 
             if self._aggre_type == 'mean':
                 graph.srcdata['h'] = feat_src
