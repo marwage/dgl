@@ -5,8 +5,10 @@ import networkx as nx
 import tensorflow as tf
 import dgl
 from dgl.data import register_data_args
-from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
+from dgl.data import CoraDataset, CitationGraphDataset
 from gcn import GCN
+from dgl.data import RedditDataset
+import subprocess
 
 
 def evaluate(model, features, labels, mask):
@@ -14,18 +16,33 @@ def evaluate(model, features, labels, mask):
     logits = logits[mask]
     labels = labels[mask]
     indices = tf.math.argmax(logits, axis=1)
+    labels = tf.cast(labels, dtype=tf.int64)
     acc = tf.reduce_mean(tf.cast(indices == labels, dtype=tf.float32))
     return acc.numpy().item()
 
 
 def main(args):
+    # unified memory
+    from tensorflow.compat.v1 import ConfigProto
+    from tensorflow.compat.v1 import InteractiveSession
+    config = ConfigProto()
+    config.gpu_options.per_process_gpu_memory_fraction = 2
+    config.gpu_options.allow_growth = True
+    session = InteractiveSession(config=config)
+
+    # logging
+    name = "tf_gcn"
+    monitoring_gpu = subprocess.Popen(["nvidia-smi", "dmon", "-s", "umt", "-o", "T", "-f", f"{name}.smi"])
+
     # load and preprocess dataset
     if args.dataset == 'cora':
-        data = CoraGraphDataset()
+        data = CoraDataset()
     elif args.dataset == 'citeseer':
-        data = CiteseerGraphDataset()
+        data = CitationGraphDataset(args.dataset)
     elif args.dataset == 'pubmed':
-        data = PubmedGraphDataset()
+        data = CitationGraphDataset(args.dataset)
+    elif args.dataset == 'reddit':
+        data = RedditDataset()
     else:
         raise ValueError('Unknown dataset: {}'.format(args.dataset))
 
@@ -112,6 +129,9 @@ def main(args):
 
         acc = evaluate(model, features, labels, test_mask)
         print("Test Accuracy {:.4f}".format(acc))
+
+        # logging
+        monitoring_gpu.terminate()
 
 
 if __name__ == '__main__':
